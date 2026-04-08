@@ -48,6 +48,32 @@ class DownloadAssetsTests(unittest.TestCase):
             self.assertTrue(expected.exists())
             self.assertFalse(downloaded.exists())
 
+    def test_normalize_env_layout_moves_pickles_and_jsons_to_expected_dirs(self) -> None:
+        module = _load_download_assets_module()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            config = {
+                "assets": {
+                    "dataset_root": str(root / "artifacts" / "assets" / "datasets"),
+                    "simulation_envs": {
+                        "pickles_dir": str(root / "artifacts" / "assets" / "scenario_dreamer_waymo_200m_pickles"),
+                        "jsons_dir": str(root / "artifacts" / "assets" / "scenario_dreamer_waymo_200m_jsons"),
+                    },
+                }
+            }
+            download_root = Path(config["assets"]["dataset_root"]) / "scenario_dreamer_release" / "nested"
+            download_root.mkdir(parents=True, exist_ok=True)
+            (download_root / "scene_a.pkl").write_text("pickle-bytes", encoding="utf-8")
+            (download_root / "scene_a.json").write_text("{\"scene\": 1}", encoding="utf-8")
+
+            payload = module._normalize_env_layout(config)
+            pickles_dir = Path(config["assets"]["simulation_envs"]["pickles_dir"])
+            jsons_dir = Path(config["assets"]["simulation_envs"]["jsons_dir"])
+
+            self.assertEqual(payload["status"], "normalized")
+            self.assertTrue((pickles_dir / "scene_a.pkl").exists())
+            self.assertTrue((jsons_dir / "scene_a.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

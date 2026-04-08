@@ -21,6 +21,18 @@ def _checkpoint_search_root(config) -> Path:
     return scratch_root / "checkpoints"
 
 
+def _env_expected_dirs(config) -> tuple[Path, Path]:
+    return (
+        resolve_repo_relative(config["assets"]["simulation_envs"]["pickles_dir"]),
+        resolve_repo_relative(config["assets"]["simulation_envs"]["jsons_dir"]),
+    )
+
+
+def _env_download_root(config) -> Path:
+    dataset_root = resolve_repo_relative(config["assets"]["dataset_root"])
+    return dataset_root / "scenario_dreamer_release"
+
+
 def _normalize_checkpoint_layout(config):
     expected = _checkpoint_expected_path(config)
     search_root = _checkpoint_search_root(config)
@@ -60,6 +72,48 @@ def _normalize_checkpoint_layout(config):
     return result
 
 
+def _normalize_env_layout(config):
+    pickles_dir, jsons_dir = _env_expected_dirs(config)
+    download_root = _env_download_root(config)
+    result = {
+        "download_root": str(download_root),
+        "pickles_dir": str(pickles_dir),
+        "jsons_dir": str(jsons_dir),
+    }
+    pickles_dir.mkdir(parents=True, exist_ok=True)
+    jsons_dir.mkdir(parents=True, exist_ok=True)
+    if not download_root.exists():
+        result["status"] = "download_root_missing"
+        return result
+
+    pkl_candidates = sorted(path for path in download_root.rglob("*.pkl") if path.is_file())
+    json_candidates = sorted(path for path in download_root.rglob("*.json") if path.is_file())
+    result["num_pkl_candidates"] = len(pkl_candidates)
+    result["num_json_candidates"] = len(json_candidates)
+
+    moved_pickles = 0
+    moved_jsons = 0
+
+    for candidate in pkl_candidates:
+        target = pickles_dir / candidate.name
+        if candidate == target or target.exists():
+            continue
+        shutil.move(str(candidate), str(target))
+        moved_pickles += 1
+
+    for candidate in json_candidates:
+        target = jsons_dir / candidate.name
+        if candidate == target or target.exists():
+            continue
+        shutil.move(str(candidate), str(target))
+        moved_jsons += 1
+
+    result["moved_pickles"] = moved_pickles
+    result["moved_jsons"] = moved_jsons
+    result["status"] = "normalized"
+    return result
+
+
 def _download_checkpoint(config):
     gdown = shutil.which("gdown")
     if not gdown:
@@ -76,6 +130,31 @@ def _download_checkpoint(config):
     }
     payload["normalize"] = _normalize_checkpoint_layout(config)
     payload["expected_exists_after"] = _checkpoint_expected_path(config).exists()
+    return payload
+
+
+def _download_envs(config):
+    gdown = shutil.which("gdown")
+    if not gdown:
+        return {
+            "status": "gdown_missing",
+            "hint": "Install gdown or place the environment pack manually.",
+            "url": config["assets"]["simulation_envs"]["shared_drive_url"],
+        }
+    download_root = _env_download_root(config)
+    download_root.mkdir(parents=True, exist_ok=True)
+    cmd = [gdown, "--folder", config["assets"]["simulation_envs"]["shared_drive_url"], "-O", str(download_root)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    payload = {
+        "status": "ok" if proc.returncode == 0 else "failed",
+        "command": cmd,
+        "stdout": proc.stdout[-1200:],
+        "stderr": proc.stderr[-1200:],
+    }
+    payload["normalize"] = _normalize_env_layout(config)
+    pickles_dir, jsons_dir = _env_expected_dirs(config)
+    payload["pickles_exists_after"] = pickles_dir.exists() and any(pickles_dir.glob("*.pkl"))
+    payload["jsons_exists_after"] = jsons_dir.exists() and any(jsons_dir.glob("*.json"))
     return payload
 
 
@@ -106,11 +185,7 @@ def main() -> int:
         if args.mode in {"checkpoint", "all"}:
             payload["checkpoint_download"] = _download_checkpoint(config)
         if args.mode in {"envs", "all"}:
-            payload["env_download"] = {
-                "status": "manual_or_external",
-                "hint": "Place the 75-environment Waymo pack under artifacts/assets/scenario_dreamer_waymo_200m_pickles. Use the shared Drive URL for the official release assets.",
-                "url": config["assets"]["simulation_envs"]["shared_drive_url"],
-            }
+            payload["env_download"] = _download_envs(config)
     payload["after"] = inspect_assets(config)
     payload["verification_errors"] = _verification_errors(payload, args.mode)
     print(json.dumps(payload, indent=2, sort_keys=True))
