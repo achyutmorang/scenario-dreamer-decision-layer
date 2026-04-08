@@ -1,0 +1,177 @@
+[
+  {
+    "authors": [
+      "Luke Rowe",
+      "Roger Girgis",
+      "Anthony Gosselin",
+      "Liam Paull",
+      "Christopher Pal",
+      "Felix Heide"
+    ],
+    "id": "2503.22496",
+    "local_path": "references/papers/2503.22496_scenario_dreamer_vectorized_latent_diffusion_for_generating_driving_simulation_environment.pdf",
+    "sha256": "e9c2b1f188a8a120736e8b742b0562759d9dd4f4eef1169df38b84aa4b3aaf03",
+    "source_url": "https://arxiv.org/pdf/2503.22496.pdf",
+    "title": "Scenario Dreamer: Vectorized Latent Diffusion for Generating Driving Simulation Environments",
+    "why_it_matters": "Primary simulator stack and baseline environment-generation paper.",
+    "year": 2025
+  },
+  {
+    "authors": [
+      "Luke Rowe",
+      "Roger Girgis",
+      "Anthony Gosselin",
+      "Bruno Carrez",
+      "Florian Golemo",
+      "Felix Heide",
+      "Liam Paull",
+      "Christopher Pal"
+    ],
+    "id": "2403.19918",
+    "local_path": "references/papers/2403.19918_ctrl-sim_reactive_and_controllable_driving_agents_with_offline_reinforcement_learning.pdf",
+    "sha256": "e28325b582bb343b94a8e75f174516292a086d64a5fcca1854ea127be8778f20",
+    "source_url": "https://arxiv.org/pdf/2403.19918.pdf",
+    "title": "CtRL-Sim: Reactive and Controllable Driving Agents with Offline Reinforcement Learning",
+    "why_it_matters": "Frozen pretrained behaviour model used as the baseline backbone.",
+    "year": 2024
+  },
+  {
+    "authors": [
+      "Cole Gulino",
+      "Justin Fu",
+      "Wenjie Luo",
+      "George Tucker",
+      "Eli Bronstein",
+      "Yiren Lu",
+      "Jean Harb",
+      "Xinlei Pan",
+      "Yan Wang",
+      "Xiangyu Chen",
+      "John D. Co-Reyes",
+      "Rishabh Agarwal",
+      "Rebecca Roelofs",
+      "Yao Lu",
+      "Nico Montali",
+      "Paul Mougin",
+      "Zoey Yang",
+      "Brandyn White",
+      "Aleksandra Faust",
+      "Rowan McAllister",
+      "Dragomir Anguelov",
+      "Benjamin Sapp"
+    ],
+    "id": "2310.08710",
+    "local_path": "references/papers/2310.08710_waymax_an_accelerated_data-driven_simulator_for_large-scale_autonomous_driving_research.pdf",
+    "sha256": "88484a55f4c2ea8793fefc258d8baad35e313ecfcad97f171b7be108381356ea",
+    "source_url": "https://arxiv.org/pdf/2310.08710.pdf",
+    "title": "Waymax: An Accelerated, Data-Driven Simulator for Large-Scale Autonomous Driving Research",
+    "why_it_matters": "Waymax reference for later transfer-check design and metric framing.",
+    "year": 2023
+  },
+  {
+    "authors": [
+      "Nico Montali",
+      "John Lambert",
+      "Paul Mougin",
+      "Alex Kuefler",
+      "Nick Rhinehart",
+      "Michelle Li",
+      "Cole Gulino",
+      "Tristan Emrich",
+      "Zoey Yang",
+      "Shimon Whiteson",
+      "Brandyn White",
+      "Dragomir Anguelov"
+    ],
+    "id": "2305.12032",
+    "local_path": "references/papers/2305.12032_the_waymo_open_sim_agents_challenge.pdf",
+    "sha256": "5b5ea40959df5e019cdcad1d5c40edf3f79a5fc6b6fe928adfcf1866fba04194",
+    "source_url": "https://arxiv.org/pdf/2305.12032.pdf",
+    "title": "The Waymo Open Sim Agents Challenge",
+    "why_it_matters": "Official WOSAC evaluation and realism-metric reference point.",
+    "year": 2023
+  },
+  {
+    "authors": [
+      "Wei Wu",
+      "Xiaoxin Feng",
+      "Ziyan Gao",
+      "Yuheng Kan"
+    ],
+    "id": "2405.15677",
+    "local_path": "references/papers/2405.15677_smart_scalable_multi-agent_real-time_motion_generation_via_next-token_prediction.pdf",
+    "sha256": "8f046a016472038c0363114567ac0416fa8d3066e6ab7c3f6ca1377f68e6a03e",
+    "source_url": "https://arxiv.org/pdf/2405.15677.pdf",
+    "title": "SMART: Scalable Multi-agent Real-time Motion Generation via Next-token Prediction",
+    "why_it_matters": "Previous SMART baseline line; useful contrast with the new stack choice.",
+    "year": 2024
+  },
+  {
+    "authors": [
+      "Saman Kazemkhani",
+      "Aarav Pandya",
+      "Daphne Cornelisse",
+      "Brennan Shacklett",
+      "Eugene Vinitsky"
+    ],
+    "id": "2408.01584",
+    "local_path": "references/papers/2408.01584_gpudrive_data-driven_multi-agent_driving_simulation_at_1_million_fps.pdf",
+    "sha256": "49b76ab9db485aed77af12bfe0833e0bda5001033c3053f7168a2b2c5d5c8f33",
+    "source_url": "https://arxiv.org/pdf/2408.01584.pdf",
+    "title": "GPUDrive: Data-driven, multi-agent driving simulation at 1 million FPS",
+    "why_it_matters": "Fast simulator reference and adjacent environment stack for planning research.",
+    "year": 2024
+  },
+  {
+    "authors": [
+      "Lingyu Xiao",
+      "Jiang-Jiang Liu",
+      "Xiaoqing Ye",
+      "Wankou Yang",
+      "Jingdong Wang"
+    ],
+    "id": "2408.16375",
+    "local_path": "references/papers/2408.16375_easychauffeur_a_baseline_advancing_simplicity_and_efficiency_on_waymax.pdf",
+    "sha256": "6da6dc067eff9a5f4682e1eba13f0e7d2e42079eddbb87705e6fe96195049a89",
+    "source_url": "https://arxiv.org/pdf/2408.16375.pdf",
+    "title": "EasyChauffeur: A Baseline Advancing Simplicity and Efficiency on Waymax",
+    "why_it_matters": "Waymax planning baseline with evaluation-robustness perspective.",
+    "year": 2024
+  },
+  {
+    "authors": [
+      "Guanren Qiao",
+      "Guorui Quan",
+      "Jiawei Yu",
+      "Shujun Jia",
+      "Guiliang Liu"
+    ],
+    "id": "2408.15538",
+    "local_path": "references/papers/2408.15538_trafficgamer_reliable_and_flexible_traffic_simulation_for_safety-critical_scenarios_with_g.pdf",
+    "sha256": "501f378d522aeb6468ce8c53de005ffba44f616f23905c6468ece5006dc493dd",
+    "source_url": "https://arxiv.org/pdf/2408.15538.pdf",
+    "title": "TrafficGamer: Reliable and Flexible Traffic Simulation for Safety-Critical Scenarios with Game-Theoretic Oracles",
+    "why_it_matters": "Controllable safety-critical traffic simulation relevant to scenario-conditioned methods.",
+    "year": 2024
+  },
+  {
+    "authors": [
+      "Zikang Zhou",
+      "Haibo Hu",
+      "Xinhong Chen",
+      "Jianping Wang",
+      "Nan Guan",
+      "Kui Wu",
+      "Yung-Hui Li",
+      "Yu-Kai Huang",
+      "Chun Jason Xue"
+    ],
+    "id": "2405.17372",
+    "local_path": "references/papers/2405.17372_behaviorgpt_smart_agent_simulation_for_autonomous_driving_with_next-patch_prediction.pdf",
+    "sha256": "531a6d775be04b443d26d2a5a3931e0c2968ff307c65db86a9ec55e88f74f679",
+    "source_url": "https://arxiv.org/pdf/2405.17372.pdf",
+    "title": "BehaviorGPT: Smart Agent Simulation for Autonomous Driving with Next-Patch Prediction",
+    "why_it_matters": "Strong compact WOSAC baseline family adjacent to decision-layer work.",
+    "year": 2024
+  }
+]

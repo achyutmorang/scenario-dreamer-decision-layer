@@ -1,0 +1,94 @@
+{
+  "baseline_name": "scenario_dreamer_ctrlsim",
+  "upstream": {
+    "repo_url": "https://github.com/princeton-computational-imaging/scenario-dreamer.git",
+    "repo_commit": "675423469766bf2fd8a6b569ef1869a6f1e76993",
+    "repo_dir": "external/scenario-dreamer"
+  },
+  "assets": {
+    "root": "artifacts/assets",
+    "scratch_root": "artifacts/assets/scenario-dreamer",
+    "dataset_root": "artifacts/assets/datasets",
+    "checkpoint": {
+      "run_name": "ctrl_sim_waymo_1M_steps",
+      "google_drive_url": "https://drive.google.com/drive/folders/1vw84BCfqqolY4DTl3YXOZwfY6nYnCmNo?usp=sharing",
+      "shared_drive_url": "https://drive.google.com/drive/folders/13DSHf2UhrvguD7i7iYL5SfSDhgLcW_ja?usp=sharing",
+      "relative_ckpt_path": "artifacts/assets/scenario-dreamer/checkpoints/ctrl_sim_waymo_1M_steps/last.ckpt",
+      "expected_sha256": "8ed2d3a0546a06907f797224492c44b38013ae804af1de0fe9991814d12d0062"
+    },
+    "simulation_envs": {
+      "source_note": "Use the 75-environment Waymo pack released with Scenario Dreamer.",
+      "shared_drive_url": "https://drive.google.com/drive/folders/13DSHf2UhrvguD7i7iYL5SfSDhgLcW_ja?usp=sharing",
+      "pickles_dir": "artifacts/assets/scenario_dreamer_waymo_200m_pickles",
+      "jsons_dir": "artifacts/assets/scenario_dreamer_waymo_200m_jsons",
+      "default_route_length_m": 200
+    },
+    "movies_dir": "artifacts/movies"
+  },
+  "baseline": {
+    "sim_mode": "scenario_dreamer",
+    "policy": "idm",
+    "behaviour_model_run_name": "ctrl_sim_waymo_1M_steps",
+    "simulate_vehicles_only": true,
+    "lightweight_video": true,
+    "verbose": true,
+    "steps": 400,
+    "dt": 0.1,
+    "agent_scale": 1.0,
+    "tilt": 10,
+    "action_temperature": 1.0,
+    "use_rtg": true,
+    "predict_rtgs": true,
+    "compute_behaviour_metrics": false
+  },
+  "evaluation": {
+    "seeds": {
+      "smoke": 0,
+      "dev": 0,
+      "report": 0,
+      "demo": 0
+    },
+    "tiers": {
+      "smoke": {
+        "num_envs": 3,
+        "visualize": true,
+        "lightweight": true,
+        "tag": "smoke"
+      },
+      "dev": {
+        "num_envs": 12,
+        "visualize": false,
+        "lightweight": true,
+        "tag": "dev"
+      },
+      "report": {
+        "num_envs": -1,
+        "visualize": false,
+        "lightweight": false,
+        "tag": "report"
+      },
+      "demo": {
+        "num_envs": 1,
+        "visualize": true,
+        "lightweight": true,
+        "tag": "demo"
+      }
+    },
+    "metrics": [
+      "collision_rate",
+      "off_route_rate",
+      "completed_rate",
+      "progress",
+      "runtime_throughput_scenarios_per_sec",
+      "num_scenarios",
+      "elapsed_seconds"
+    ]
+  },
+  "references": {
+    "manifest_path": "references/papers_manifest.json"
+  },
+  "transfer_hook": {
+    "enabled": true,
+    "schema_path": "docs/transfer_hook.md"
+  }
+}
