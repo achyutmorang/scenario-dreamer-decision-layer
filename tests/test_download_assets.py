@@ -61,10 +61,13 @@ class DownloadAssetsTests(unittest.TestCase):
                     },
                 }
             }
-            download_root = Path(config["assets"]["dataset_root"]) / "scenario_dreamer_release" / "nested"
-            download_root.mkdir(parents=True, exist_ok=True)
-            (download_root / "scene_a.pkl").write_text("pickle-bytes", encoding="utf-8")
-            (download_root / "scene_a.json").write_text("{\"scene\": 1}", encoding="utf-8")
+            download_root = Path(config["assets"]["dataset_root"]) / "scenario_dreamer_release" / "extracted"
+            source_pickles = download_root / "scenario_dreamer_waymo_200m_pickles"
+            source_jsons = download_root / "scenario_dreamer_waymo_200m_jsons"
+            source_pickles.mkdir(parents=True, exist_ok=True)
+            source_jsons.mkdir(parents=True, exist_ok=True)
+            (source_pickles / "scene_a.pkl").write_text("pickle-bytes", encoding="utf-8")
+            (source_jsons / "scene_a.json").write_text("{\"scene\": 1}", encoding="utf-8")
 
             payload = module._normalize_env_layout(config)
             pickles_dir = Path(config["assets"]["simulation_envs"]["pickles_dir"])

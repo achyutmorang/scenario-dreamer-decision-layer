@@ -12,7 +12,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from scenario_dreamer_decision_layer.colab import bind_drive_layout, default_drive_layout
+from scenario_dreamer_decision_layer.colab import bind_drive_layout, default_drive_layout, seed_env_pack_from_upstream
 
 
 class ColabBindingTests(unittest.TestCase):
@@ -41,6 +41,34 @@ class ColabBindingTests(unittest.TestCase):
             self.assertTrue((canonical_root / "scenario-dreamer").is_symlink())
             self.assertTrue((canonical_root / "pickles").is_symlink())
             self.assertEqual(os.environ["SCENARIO_DREAMER_RESULTS_ROOT"], str(temp_root / "drive" / "scenario_dreamer_decision_layer" / "results" / "runs"))
+
+    def test_seed_env_pack_from_upstream_copies_missing_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            temp_root = Path(td).resolve()
+            upstream = temp_root / "external" / "scenario-dreamer" / "metadata" / "simulation_environment_datasets"
+            (upstream / "scenario_dreamer_waymo_200m_pickles").mkdir(parents=True, exist_ok=True)
+            (upstream / "scenario_dreamer_waymo_200m_jsons").mkdir(parents=True, exist_ok=True)
+            (upstream / "scenario_dreamer_waymo_200m_pickles" / "0_0.pkl").write_text("pickle", encoding="utf-8")
+            (upstream / "scenario_dreamer_waymo_200m_jsons" / "0_0.json").write_text("{}", encoding="utf-8")
+
+            target_root = temp_root / "bound"
+            config = {
+                "upstream": {"repo_dir": str(temp_root / "external" / "scenario-dreamer")},
+                "assets": {
+                    "scratch_root": str(target_root / "scenario-dreamer"),
+                    "dataset_root": str(target_root / "datasets"),
+                    "simulation_envs": {
+                        "pickles_dir": str(target_root / "scenario_dreamer_waymo_200m_pickles"),
+                        "jsons_dir": str(target_root / "scenario_dreamer_waymo_200m_jsons"),
+                    },
+                },
+            }
+            with patch("scenario_dreamer_decision_layer.colab.load_config", return_value=config):
+                payload = seed_env_pack_from_upstream()
+
+            self.assertEqual(payload["status"], "seeded")
+            self.assertTrue((target_root / "scenario_dreamer_waymo_200m_pickles" / "0_0.pkl").exists())
+            self.assertTrue((target_root / "scenario_dreamer_waymo_200m_jsons" / "0_0.json").exists())
 
 
 if __name__ == "__main__":

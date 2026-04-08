@@ -71,6 +71,54 @@ def bind_drive_layout(drive_root: str | Path, *, config_path: str | Path | None 
     }
 
 
+def seed_env_pack_from_upstream(*, config_path: str | Path | None = None) -> Dict[str, Any]:
+    config = load_config(config_path)
+    upstream_dir = resolve_repo_relative(config["upstream"]["repo_dir"])
+    assert upstream_dir is not None
+    metadata_root = upstream_dir / "metadata" / "simulation_environment_datasets"
+    canonical = _canonical_paths(config)
+    pickles_dir = canonical["env_pickles_dir"]
+    jsons_dir = canonical["env_jsons_dir"]
+    source_pickles = metadata_root / pickles_dir.name
+    source_jsons = metadata_root / jsons_dir.name
+
+    result: Dict[str, Any] = {
+        "metadata_root": str(metadata_root),
+        "source_pickles": str(source_pickles),
+        "source_jsons": str(source_jsons),
+        "target_pickles": str(pickles_dir),
+        "target_jsons": str(jsons_dir),
+    }
+
+    copied_pickles = 0
+    copied_jsons = 0
+    pickles_dir.mkdir(parents=True, exist_ok=True)
+    jsons_dir.mkdir(parents=True, exist_ok=True)
+
+    if source_pickles.exists():
+        for candidate in sorted(source_pickles.glob("*.pkl")):
+            target = pickles_dir / candidate.name
+            if target.exists():
+                continue
+            shutil.copy2(candidate, target)
+            copied_pickles += 1
+
+    if source_jsons.exists():
+        for candidate in sorted(source_jsons.glob("*.json")):
+            target = jsons_dir / candidate.name
+            if target.exists():
+                continue
+            shutil.copy2(candidate, target)
+            copied_jsons += 1
+
+    result["copied_pickles"] = copied_pickles
+    result["copied_jsons"] = copied_jsons
+    result["num_pickles_after"] = len(sorted(pickles_dir.glob("*.pkl"))) if pickles_dir.exists() else 0
+    result["num_jsons_after"] = len(sorted(jsons_dir.glob("*.json"))) if jsons_dir.exists() else 0
+    result["status"] = "seeded" if result["num_pickles_after"] > 0 and result["num_jsons_after"] > 0 else "source_missing_or_empty"
+    return result
+
+
 def inspect_bound_layout(*, config_path: str | Path | None = None) -> Dict[str, Any]:
     config = load_config(config_path)
     canonical = _canonical_paths(config)

@@ -5,6 +5,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import tarfile
 from pathlib import Path
 
 from _script_utils import ROOT  # noqa: F401
@@ -31,6 +32,11 @@ def _env_expected_dirs(config) -> tuple[Path, Path]:
 def _env_download_root(config) -> Path:
     dataset_root = resolve_repo_relative(config["assets"]["dataset_root"])
     return dataset_root / "scenario_dreamer_release"
+
+
+def _env_archive_path(config) -> Path:
+    download_root = _env_download_root(config)
+    return download_root / config["assets"]["simulation_envs"].get("archive_name", "simulation_environment_datasets.tar")
 
 
 def _normalize_checkpoint_layout(config):
@@ -86,31 +92,78 @@ def _normalize_env_layout(config):
         result["status"] = "download_root_missing"
         return result
 
-    pkl_candidates = sorted(path for path in download_root.rglob("*.pkl") if path.is_file())
-    json_candidates = sorted(path for path in download_root.rglob("*.json") if path.is_file())
-    result["num_pkl_candidates"] = len(pkl_candidates)
-    result["num_json_candidates"] = len(json_candidates)
+    discovered_pickles_dirs = sorted(
+        str(path) for path in download_root.rglob("*")
+        if path.is_dir() and path.name.endswith("_pickles")
+    )
+    discovered_jsons_dirs = sorted(
+        str(path) for path in download_root.rglob("*")
+        if path.is_dir() and path.name.endswith("_jsons")
+    )
+    result["discovered_pickles_dirs"] = discovered_pickles_dirs
+    result["discovered_jsons_dirs"] = discovered_jsons_dirs
 
     moved_pickles = 0
     moved_jsons = 0
 
-    for candidate in pkl_candidates:
-        target = pickles_dir / candidate.name
-        if candidate == target or target.exists():
-            continue
-        shutil.move(str(candidate), str(target))
-        moved_pickles += 1
+    exact_pickles_sources = sorted(
+        path for path in download_root.rglob(pickles_dir.name)
+        if path.is_dir()
+    )
+    exact_jsons_sources = sorted(
+        path for path in download_root.rglob(jsons_dir.name)
+        if path.is_dir()
+    )
+    result["exact_pickles_sources"] = [str(path) for path in exact_pickles_sources]
+    result["exact_jsons_sources"] = [str(path) for path in exact_jsons_sources]
 
-    for candidate in json_candidates:
-        target = jsons_dir / candidate.name
-        if candidate == target or target.exists():
-            continue
-        shutil.move(str(candidate), str(target))
-        moved_jsons += 1
+    pickles_sources = exact_pickles_sources
+    jsons_sources = exact_jsons_sources
+
+    if not pickles_sources and len(discovered_pickles_dirs) == 1:
+        pickles_sources = [Path(discovered_pickles_dirs[0])]
+        result["pickles_fallback"] = "single_discovered_dir"
+    if not jsons_sources and len(discovered_jsons_dirs) == 1:
+        jsons_sources = [Path(discovered_jsons_dirs[0])]
+        result["jsons_fallback"] = "single_discovered_dir"
+
+    for source_dir in pickles_sources:
+        for candidate in sorted(source_dir.glob("*.pkl")):
+            target = pickles_dir / candidate.name
+            if candidate == target or target.exists():
+                continue
+            shutil.move(str(candidate), str(target))
+            moved_pickles += 1
+
+    for source_dir in jsons_sources:
+        for candidate in sorted(source_dir.glob("*.json")):
+            target = jsons_dir / candidate.name
+            if candidate == target or target.exists():
+                continue
+            shutil.move(str(candidate), str(target))
+            moved_jsons += 1
 
     result["moved_pickles"] = moved_pickles
     result["moved_jsons"] = moved_jsons
-    result["status"] = "normalized"
+    result["status"] = "normalized" if (pickles_sources or jsons_sources) else "no_matching_dirs"
+    return result
+
+
+def _extract_env_archive(config):
+    archive_path = _env_archive_path(config)
+    download_root = _env_download_root(config)
+    extract_root = download_root / "extracted"
+    result = {
+        "archive_path": str(archive_path),
+        "extract_root": str(extract_root),
+    }
+    if not archive_path.exists():
+        result["status"] = "archive_missing"
+        return result
+    extract_root.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive_path, "r:*") as tf:
+        tf.extractall(extract_root)
+    result["status"] = "extracted"
     return result
 
 
@@ -139,11 +192,16 @@ def _download_envs(config):
         return {
             "status": "gdown_missing",
             "hint": "Install gdown or place the environment pack manually.",
-            "url": config["assets"]["simulation_envs"]["shared_drive_url"],
+            "url": config["assets"]["simulation_envs"].get("archive_url") or config["assets"]["simulation_envs"]["shared_drive_url"],
         }
     download_root = _env_download_root(config)
     download_root.mkdir(parents=True, exist_ok=True)
-    cmd = [gdown, "--folder", config["assets"]["simulation_envs"]["shared_drive_url"], "-O", str(download_root)]
+    archive_url = config["assets"]["simulation_envs"].get("archive_url")
+    archive_path = _env_archive_path(config)
+    if archive_url:
+        cmd = [gdown, archive_url, "-O", str(archive_path)]
+    else:
+        cmd = [gdown, "--folder", config["assets"]["simulation_envs"]["shared_drive_url"], "-O", str(download_root)]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     payload = {
         "status": "ok" if proc.returncode == 0 else "failed",
@@ -151,6 +209,7 @@ def _download_envs(config):
         "stdout": proc.stdout[-1200:],
         "stderr": proc.stderr[-1200:],
     }
+    payload["archive_extract"] = _extract_env_archive(config)
     payload["normalize"] = _normalize_env_layout(config)
     pickles_dir, jsons_dir = _env_expected_dirs(config)
     payload["pickles_exists_after"] = pickles_dir.exists() and any(pickles_dir.glob("*.pkl"))

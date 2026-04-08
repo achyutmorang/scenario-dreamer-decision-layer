@@ -19,6 +19,8 @@
     "simulation_envs": {
       "source_note": "Use the 75-environment Waymo pack released with Scenario Dreamer.",
       "shared_drive_url": "https://drive.google.com/drive/folders/13DSHf2UhrvguD7i7iYL5SfSDhgLcW_ja?usp=sharing",
+      "archive_url": "https://drive.google.com/uc?id=1r2mxCHM-qZOAMu4x4ZNUtIAqCgimQ7iW",
+      "archive_name": "simulation_environment_datasets.tar",
       "pickles_dir": "artifacts/assets/scenario_dreamer_waymo_200m_pickles",
       "jsons_dir": "artifacts/assets/scenario_dreamer_waymo_200m_jsons",
       "default_route_length_m": 200
