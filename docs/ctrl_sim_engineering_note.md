@@ -167,5 +167,11 @@ For this repo, treat CtRL-Sim as a **simulation prior**:
 - do not treat parameter count alone as evidence of cheap reproducibility,
 - do use it as the fixed reactive world model for baseline and future comparative experiments.
 
+Baseline semantics:
+- **system baseline** = Scenario Dreamer environment pack + frozen CtRL-Sim checkpoint + stock IDM ego,
+- **experiment baseline** = the same frozen stack without any new decision-layer logic.
+
+If the experiment perturbs the scene or ego timing, first measure what the stock frozen stack does under that perturbation before attributing any effect to a new method.
+
 ## Bottom Line
 CtRL-Sim is small enough to be deployable, but not cheap enough to be a sensible Colab training target. Its architecture and training setup support exactly the pivot this repo is making: **freeze the expensive reactive simulator-policy backbone and study decision-layer improvement on top of it**.

@@ -10,6 +10,15 @@ The fixed v1 baseline is:
 - **Baseline policy:** IDM ego planner with CtRL-Sim-controlled traffic agents
 - **Evaluation domains:** Scenario Dreamer pregenerated Waymo environments, organized into smoke/dev/report tiers
 
+Baseline semantics for this repo:
+- **System baseline:** the fixed stack above.
+- **Experiment baseline:** the same frozen stack with no added decision layer, reranker, critic, or other method-specific logic.
+
+For perturbation or interaction-breakdown studies, keep the distinction explicit:
+- the **reference rollout** is the stock frozen stack on the original scene,
+- the **counterfactual baseline** is the same stock frozen stack on the perturbed scene,
+- the **method** is the perturbed scene plus the proposed add-on.
+
 What stays frozen in v1:
 - Scenario Dreamer environment generation stack
 - CtRL-Sim behavior backbone
@@ -38,6 +47,10 @@ All future methods must keep these fixed:
 - same random seeds for each evaluation tier
 - same ego planner family unless the experiment explicitly changes it
 - same rollout horizon and metric schema
+
+Default comparison rule:
+- if the contribution is a **decision layer**, compare against the same frozen stack without the decision layer.
+- if the contribution is a **diagnostic perturbation study**, compare stock-vs-stock first before introducing any method.
 
 The normalized outputs in `results/runs/<run_id>/` are the contract for comparison.
 

@@ -10,6 +10,23 @@ A local research workspace for **Scenario Dreamer + pretrained CtRL-Sim** baseli
   - **Planner policy for baseline eval:** IDM ego policy, CtRL-Sim for other agents
 - The research target is a future **decision-layer method** on top of a frozen baseline.
 
+## Baseline Semantics
+This repo uses the word **baseline** in two distinct but related ways:
+
+- **System baseline:** the fixed stack used across the project:
+  - Scenario Dreamer pregenerated Waymo environments
+  - frozen pretrained CtRL-Sim traffic model
+  - stock IDM ego policy
+- **Experiment baseline:** the exact same frozen stack **without** any new method-specific logic added on top.
+
+For example, if the experiment is an interaction-breakdown study or a decision-layer comparison, the fairest comparator is:
+
+- same scene,
+- same seeds,
+- same frozen CtRL-Sim traffic,
+- same IDM ego family,
+- but **no added reranker, selector, critic, or perturbation-handling logic** beyond the stock setup.
+
 ## What This Repo Is Not
 - Not a full SMART reproduction repo.
 - Not a full WOSAC submission repo.
@@ -19,6 +36,7 @@ A local research workspace for **Scenario Dreamer + pretrained CtRL-Sim** baseli
 - [`docs/research_plan.md`](./docs/research_plan.md): research direction and milestone ladder
 - [`docs/problem_formulation.md`](./docs/problem_formulation.md): rigorous problem statement for the decision-layer method
 - [`docs/ctrl_sim_engineering_note.md`](./docs/ctrl_sim_engineering_note.md): CtRL-Sim architecture, training details, and Colab-scope implications
+- [`docs/closed_loop_simulation_field_reverse_engineering.md`](./docs/closed_loop_simulation_field_reverse_engineering.md): critical field analysis, failure modes, and research hooks
 - [`configs/baselines/scenario_dreamer_ctrlsim.yaml`](./configs/baselines/scenario_dreamer_ctrlsim.yaml): single source of truth baseline config (JSON-compatible YAML)
 - [`references/papers/`](./references/papers): curated core paper packet
 - [`references/papers_manifest.json`](./references/papers_manifest.json): paper metadata + integrity

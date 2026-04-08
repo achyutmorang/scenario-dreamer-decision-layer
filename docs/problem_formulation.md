@@ -28,6 +28,14 @@ The following remain fixed throughout the main comparison:
 
 Only the **ego decision layer** is allowed to change.
 
+## Baseline Semantics
+For this project, baseline should be read at two levels:
+
+- **System baseline:** fixed Scenario Dreamer environments + frozen CtRL-Sim traffic + stock IDM ego.
+- **Experiment baseline:** the same frozen system baseline with **no added selector, reranker, critic, or other method-specific logic**.
+
+This distinction matters because the contribution here is not a new simulator backbone. It is a modification to the ego decision rule on top of a fixed closed-loop stack.
+
 ## Core State and Transition Model
 Let:
 
@@ -293,7 +301,9 @@ At minimum, compare:
    - report whether multi-future reasoning is empirically justified
 
 1. **Baseline IDM ego**
-   - no distribution-aware selection
+   - the stock frozen system baseline
+   - fixed Scenario Dreamer scene, frozen CtRL-Sim traffic, stock IDM ego
+   - no distribution-aware selection or add-on logic
 
 2. **Single-rollout selector**
    - choose action using one sampled future per candidate
@@ -316,6 +326,17 @@ Also include:
 This isolates the central question:
 
 > Is mean, worst-case, or tail-risk the right statistic for closed-loop decision making under reactive uncertainty?
+
+For perturbation-based diagnostics, use the same logic:
+
+1. **Reference rollout**
+   - stock frozen system baseline on the original scene
+2. **Counterfactual baseline**
+   - stock frozen system baseline on the perturbed scene
+3. **Method rollout**
+   - perturbed scene plus the proposed decision-layer or diagnostic add-on
+
+This prevents the perturbation itself from being confused with the method effect.
 
 ## Evaluation Contract
 To keep the claim clean, the following must remain fixed across all methods:
