@@ -17,6 +17,8 @@ A local research workspace for **Scenario Dreamer + pretrained CtRL-Sim** baseli
 
 ## Repository Map
 - [`docs/research_plan.md`](./docs/research_plan.md): research direction and milestone ladder
+- [`docs/problem_formulation.md`](./docs/problem_formulation.md): rigorous problem statement for the decision-layer method
+- [`docs/ctrl_sim_engineering_note.md`](./docs/ctrl_sim_engineering_note.md): CtRL-Sim architecture, training details, and Colab-scope implications
 - [`configs/baselines/scenario_dreamer_ctrlsim.yaml`](./configs/baselines/scenario_dreamer_ctrlsim.yaml): single source of truth baseline config (JSON-compatible YAML)
 - [`references/papers/`](./references/papers): curated core paper packet
 - [`references/papers_manifest.json`](./references/papers_manifest.json): paper metadata + integrity
