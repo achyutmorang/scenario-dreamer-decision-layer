@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -27,3 +28,10 @@ def resolve_repo_relative(path_value: str | None) -> Path | None:
         return None
     path = Path(path_value)
     return path if path.is_absolute() else project_root() / path
+
+
+def env_path(name: str) -> Path | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    return resolve_repo_relative(value)

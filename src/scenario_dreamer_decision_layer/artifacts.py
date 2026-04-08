@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
 from .contracts import RunManifest, VideoManifest
-from .config import project_root
+from .config import project_root, resolve_repo_relative
 
 
 class RunBundle(dict):
@@ -29,9 +30,18 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
+def runs_root() -> Path:
+    override = os.environ.get("SCENARIO_DREAMER_RESULTS_ROOT", "").strip()
+    if override:
+        path = resolve_repo_relative(override)
+        assert path is not None
+        return ensure_dir(path)
+    return ensure_dir(project_root() / "results" / "runs")
+
+
 def create_run_bundle(tag: str, tier: str) -> RunBundle:
     run_id = f"{tag}_{tier}"
-    run_dir = ensure_dir(project_root() / "results" / "runs" / run_id)
+    run_dir = ensure_dir(runs_root() / run_id)
     return RunBundle(
         run_id=run_id,
         run_dir=run_dir,
