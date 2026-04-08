@@ -77,6 +77,39 @@ Tracked metrics:
 - runtime throughput
 - scenario count and elapsed time
 
+## Near-Term Experimental Plan
+The near-term question is:
+
+> Can a **distribution-aware, risk-constrained ego decision rule** improve closed-loop safety and progress over the stock frozen baseline under equal compute budget?
+
+The immediate execution ladder is:
+
+1. **Smoke baseline validation**
+   - rerun the stock frozen baseline on 3 scenarios
+   - confirm Drive-backed persistence for `run_manifest.json`, `metrics.json`, `config_snapshot.json`, and at least one MP4
+2. **Experiment 0: diversity audit**
+   - hold one fixed scenario constant
+   - rerun the same stock ego policy under multiple seeds
+   - measure whether closed-loop outcome metrics vary across seeds
+   - if no metric-level variation appears, do not rush into a distributional selector; first add trajectory-level audit instrumentation
+3. **Dev-tier baseline lock**
+   - run the fixed 12-scenario dev subset
+   - record the stock baseline metrics and runtime envelope
+   - use this as the default comparator for early selector work
+4. **Selector baseline ladder**
+   - once candidate generation exists, compare:
+     - stock IDM ego
+     - single-rollout selection
+     - mean-based selection
+     - worst-case selection
+     - CVaR-constrained selection
+5. **Report-tier evaluation**
+   - only after the selector is stable on the dev subset
+   - preserve seeds, scenario pack, and metric schema
+
+Decision gate:
+- if Experiment 0 shows no meaningful future diversity, the project should shift toward deterministic or robust replanning rather than tail-risk statistics.
+
 ## Phased Milestones
 1. **Baseline bootstrap**
    - pin upstream Scenario Dreamer

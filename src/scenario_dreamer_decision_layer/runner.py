@@ -9,7 +9,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 from .artifacts import create_run_bundle, sha256_jsonable, write_json, write_manifest, write_video_manifest
 from .config import load_config, project_root, resolve_repo_relative
@@ -47,10 +47,24 @@ def _list_pickles(path: Path) -> List[Path]:
     return sorted(path.glob("*.pkl"))
 
 
-def _materialize_subset(source_dir: Path, subset_dir: Path, limit: int) -> Tuple[Path, int]:
-    subset_dir.mkdir(parents=True, exist_ok=True)
+def _select_pickle_files(source_dir: Path, limit: int, *, offset: int = 0, indices: Iterable[int] | None = None) -> List[Path]:
     files = _list_pickles(source_dir)
-    selected = files if limit < 0 else files[:limit]
+    if indices is not None:
+        selected: List[Path] = []
+        for idx in indices:
+            if idx < 0 or idx >= len(files):
+                raise IndexError(f"Scenario index out of range: {idx} (available: 0..{len(files) - 1})")
+            selected.append(files[idx])
+        return selected
+    if offset < 0:
+        raise ValueError(f"offset must be non-negative, got {offset}")
+    if limit < 0:
+        return files[offset:]
+    return files[offset : offset + limit]
+
+
+def _materialize_files(selected: List[Path], subset_dir: Path) -> Tuple[Path, int]:
+    subset_dir.mkdir(parents=True, exist_ok=True)
     for item in subset_dir.iterdir():
         if item.is_symlink() or item.is_file():
             item.unlink()
@@ -60,6 +74,11 @@ def _materialize_subset(source_dir: Path, subset_dir: Path, limit: int) -> Tuple
         target = subset_dir / item.name
         target.symlink_to(item)
     return subset_dir, len(selected)
+
+
+def _materialize_subset(source_dir: Path, subset_dir: Path, limit: int, *, offset: int = 0, indices: Iterable[int] | None = None) -> Tuple[Path, int]:
+    selected = _select_pickle_files(source_dir, limit, offset=offset, indices=indices)
+    return _materialize_files(selected, subset_dir)
 
 
 def _build_command(config: Dict[str, Any], tier: str, dataset_path: Path, movie_dir: Path, visualize: bool, lightweight: bool, seed: int) -> List[str]:
@@ -131,17 +150,62 @@ def _missing_assets(paths: Dict[str, Path]) -> Dict[str, str]:
     return missing
 
 
+def _simulation_env(paths: Dict[str, Path]) -> Dict[str, str]:
+    env = os.environ.copy()
+    env["PROJECT_ROOT"] = str(paths["upstream_dir"])
+    env["SCRATCH_ROOT"] = str(paths["scratch_root"])
+    env["DATASET_ROOT"] = str(paths["dataset_root"])
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{paths['upstream_dir']}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(paths["upstream_dir"])
+    )
+    return env
+
+
+def _execute_simulation(
+    *,
+    paths: Dict[str, Path],
+    cmd: List[str],
+    scenario_count: int,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> Tuple[Dict[str, float], float]:
+    started = time.time()
+    proc = subprocess.run(
+        cmd,
+        cwd=paths["upstream_dir"],
+        env=_simulation_env(paths),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    elapsed = time.time() - started
+    stdout_path.write_text(proc.stdout, encoding="utf-8")
+    stderr_path.write_text(proc.stderr, encoding="utf-8")
+    if proc.returncode != 0:
+        raise RuntimeError(f"Simulation failed with code {proc.returncode}. See {stderr_path}")
+
+    metrics = _parse_metrics(proc.stdout)
+    metrics["runtime_throughput_scenarios_per_sec"] = (scenario_count / elapsed) if elapsed > 0 else 0.0
+    metrics["num_scenarios"] = scenario_count
+    metrics["elapsed_seconds"] = elapsed
+    return metrics, elapsed
+
+
 def run_tier(
     tier: str,
     dry_run: bool = False,
     force_visualize: bool | None = None,
     force_lightweight: bool | None = None,
     num_envs: int | None = None,
+    seed_override: int | None = None,
+    scenario_offset: int = 0,
+    scenario_indices: Iterable[int] | None = None,
 ) -> Dict[str, Any]:
     config = load_config()
     paths = _resolve_common_paths(config)
     tier_cfg = dict(config["evaluation"]["tiers"][tier])
-    seed = int(config["evaluation"]["seeds"][tier])
+    seed = int(seed_override if seed_override is not None else config["evaluation"]["seeds"][tier])
     limit = int(num_envs) if num_envs is not None else int(tier_cfg["num_envs"])
     visualize = bool(force_visualize if force_visualize is not None else tier_cfg["visualize"])
     lightweight = bool(force_lightweight if force_lightweight is not None else tier_cfg["lightweight"])
@@ -152,7 +216,13 @@ def run_tier(
 
     if paths["env_pickles_dir"].exists():
         if limit > 0:
-            dataset_path, scenario_count = _materialize_subset(paths["env_pickles_dir"], bundle["subset_dir"], limit)
+            dataset_path, scenario_count = _materialize_subset(
+                paths["env_pickles_dir"],
+                bundle["subset_dir"],
+                limit,
+                offset=scenario_offset,
+                indices=scenario_indices,
+            )
         else:
             dataset_path = paths["env_pickles_dir"]
             scenario_count = len(_list_pickles(dataset_path))
@@ -201,35 +271,13 @@ def run_tier(
 
     if missing_assets:
         raise FileNotFoundError(f"Missing required baseline assets: {missing_assets}")
-
-    env = os.environ.copy()
-    env["PROJECT_ROOT"] = str(paths["upstream_dir"])
-    env["SCRATCH_ROOT"] = str(paths["scratch_root"])
-    env["DATASET_ROOT"] = str(paths["dataset_root"])
-    existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        f"{paths['upstream_dir']}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(paths["upstream_dir"])
+    metrics, elapsed = _execute_simulation(
+        paths=paths,
+        cmd=cmd,
+        scenario_count=scenario_count,
+        stdout_path=bundle["stdout"],
+        stderr_path=bundle["stderr"],
     )
-
-    started = time.time()
-    proc = subprocess.run(
-        cmd,
-        cwd=paths["upstream_dir"],
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    elapsed = time.time() - started
-    bundle["stdout"].write_text(proc.stdout, encoding="utf-8")
-    bundle["stderr"].write_text(proc.stderr, encoding="utf-8")
-    if proc.returncode != 0:
-        raise RuntimeError(f"Simulation failed with code {proc.returncode}. See {bundle['stderr']}")
-
-    metrics = _parse_metrics(proc.stdout)
-    metrics["runtime_throughput_scenarios_per_sec"] = (scenario_count / elapsed) if elapsed > 0 else 0.0
-    metrics["num_scenarios"] = scenario_count
-    metrics["elapsed_seconds"] = elapsed
     write_json(bundle["metrics"], metrics)
 
     baseline_identity = BaselineIdentity(
@@ -266,6 +314,110 @@ def run_tier(
         "metrics": metrics,
         "scenario_count": scenario_count,
     }
+
+
+def run_diversity_audit(
+    *,
+    scenario_index: int = 0,
+    seeds: Iterable[int] = (0, 1, 2, 3),
+    visualize: bool = False,
+    lightweight: bool = True,
+) -> Dict[str, Any]:
+    config = load_config()
+    paths = _resolve_common_paths(config)
+    missing_assets = _missing_assets(paths)
+    if missing_assets:
+        raise FileNotFoundError(f"Missing required baseline assets: {missing_assets}")
+
+    all_files = _list_pickles(paths["env_pickles_dir"])
+    if not all_files:
+        raise FileNotFoundError(f"No scenario pickle files found under {paths['env_pickles_dir']}")
+    if scenario_index < 0 or scenario_index >= len(all_files):
+        raise IndexError(f"Scenario index out of range: {scenario_index} (available: 0..{len(all_files) - 1})")
+
+    tag = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    bundle = create_run_bundle(tag=tag, tier="diversity_audit")
+    scenario_path = all_files[scenario_index]
+    dataset_path, scenario_count = _materialize_files([scenario_path], bundle["subset_dir"])
+    requested_seeds = [int(seed) for seed in seeds]
+    movie_root = bundle["movie_dir"]
+    movie_root.mkdir(parents=True, exist_ok=True)
+
+    run_payloads: List[Dict[str, Any]] = []
+    for seed in requested_seeds:
+        seed_dir = bundle["run_dir"] / f"seed_{seed:03d}"
+        seed_dir.mkdir(parents=True, exist_ok=True)
+        movie_dir = movie_root / f"seed_{seed:03d}"
+        movie_dir.mkdir(parents=True, exist_ok=True)
+        cmd = _build_command(
+            config,
+            tier="diversity_audit",
+            dataset_path=dataset_path,
+            movie_dir=movie_dir,
+            visualize=visualize,
+            lightweight=lightweight,
+            seed=seed,
+        )
+        metrics, elapsed = _execute_simulation(
+            paths=paths,
+            cmd=cmd,
+            scenario_count=scenario_count,
+            stdout_path=seed_dir / "stdout.log",
+            stderr_path=seed_dir / "stderr.log",
+        )
+        seed_payload = {
+            "seed": seed,
+            "command": cmd,
+            "metrics": metrics,
+            "elapsed_seconds": elapsed,
+            "stdout_log": str(seed_dir / "stdout.log"),
+            "stderr_log": str(seed_dir / "stderr.log"),
+            "movie_dir": str(movie_dir),
+        }
+        write_json(seed_dir / "metrics.json", metrics)
+        write_json(seed_dir / "config_snapshot.json", {"seed": seed, "scenario_path": str(scenario_path), "command": cmd})
+        run_payloads.append(seed_payload)
+
+    metric_keys = sorted(config["evaluation"]["metrics"])
+    metric_values: Dict[str, List[float]] = {key: [] for key in metric_keys}
+    for payload in run_payloads:
+        for key in metric_keys:
+            value = payload["metrics"].get(key)
+            if value is not None:
+                metric_values[key].append(float(value))
+
+    spread = {
+        key: {
+            "min": min(values),
+            "max": max(values),
+            "range": max(values) - min(values),
+            "unique_values": len({round(v, 10) for v in values}),
+        }
+        for key, values in metric_values.items()
+        if values
+    }
+    diversity_detected = any(item["range"] > 0 for item in spread.values())
+    summary = {
+        "run_id": bundle["run_id"],
+        "run_dir": str(bundle["run_dir"]),
+        "scenario_index": scenario_index,
+        "scenario_name": scenario_path.name,
+        "scenario_path": str(scenario_path),
+        "num_scenarios": scenario_count,
+        "seeds": requested_seeds,
+        "visualize": visualize,
+        "lightweight": lightweight,
+        "runs": run_payloads,
+        "metric_spread": spread,
+        "diversity_detected": diversity_detected,
+        "decision": (
+            "distributional_method_justified_at_metric_level"
+            if diversity_detected
+            else "metric_level_diversity_not_detected; add trajectory-level audit before committing to distributional selector"
+        ),
+    }
+    write_json(bundle["run_dir"] / "diversity_audit_summary.json", summary)
+    return summary
 
 
 def write_transfer_hook_request(run_manifest_path: Path) -> Path:

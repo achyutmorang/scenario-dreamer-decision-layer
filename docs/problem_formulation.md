@@ -338,6 +338,27 @@ For perturbation-based diagnostics, use the same logic:
 
 This prevents the perturbation itself from being confused with the method effect.
 
+## Near-Term Evaluation Plan
+Before any selector is implemented, the evaluation plan is:
+
+1. **Smoke validation**
+   - verify the frozen baseline runs end to end
+   - persist artifacts and videos to Drive-backed storage
+2. **Experiment 0: diversity audit**
+   - choose one fixed scenario index
+   - rerun the same stock baseline under multiple seeds
+   - estimate whether the frozen stack exhibits non-trivial outcome spread for identical high-level conditions
+3. **Dev-tier baseline**
+   - evaluate the stock baseline on the fixed dev subset
+   - lock the baseline metrics and runtime envelope that future selectors must beat
+4. **Selector comparisons**
+   - only after diversity is empirically justified
+   - compare single-rollout, mean, worst-case, and CVaR-based decision rules under equal future budget and equal candidate budget
+5. **Report-tier run**
+   - only after the selector is stable on dev
+
+This sequence matters because a distribution-aware selector is only scientifically justified if the frozen substrate actually branches in a measurable way.
+
 ## Evaluation Contract
 To keep the claim clean, the following must remain fixed across all methods:
 
