@@ -38,6 +38,19 @@ PYG_BASE_PACKAGES = [
     "torch_geometric",
 ]
 
+UPSTREAM_PACKAGE_DIRS = [
+    "datasets",
+    "datasets/waymo",
+    "datasets/nuplan",
+    "datamodules",
+    "datamodules/waymo",
+    "datamodules/nuplan",
+    "models",
+    "policies",
+    "nn_modules",
+    "cfgs",
+]
+
 
 def _run(cmd: Sequence[str]) -> None:
     print("[setup-colab-runtime] $", " ".join(cmd))
@@ -74,9 +87,28 @@ def _install_pyg() -> None:
         _run([sys.executable, "-m", "pip", "install", "--upgrade", package, "-f", wheel_index])
 
 
+def _ensure_upstream_package_markers(upstream_repo_dir: Path) -> list[str]:
+    created: list[str] = []
+    for relative in UPSTREAM_PACKAGE_DIRS:
+        package_dir = upstream_repo_dir / relative
+        if not package_dir.exists() or not package_dir.is_dir():
+            continue
+        init_file = package_dir / "__init__.py"
+        if init_file.exists():
+            continue
+        init_file.write_text("", encoding="utf-8")
+        created.append(str(init_file))
+    return created
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install a lean Colab runtime for Scenario Dreamer baseline simulation.")
     parser.add_argument("--editable-project", action="store_true", help="Install the current repo in editable mode.")
+    parser.add_argument(
+        "--upstream-repo-dir",
+        default=str(ROOT / "external" / "scenario-dreamer"),
+        help="Path to the cloned upstream Scenario Dreamer repository.",
+    )
     args = parser.parse_args()
 
     if _missing_modules(["torch"]):
@@ -107,6 +139,16 @@ def main() -> int:
 
     if args.editable_project:
         _run([sys.executable, "-m", "pip", "install", "-e", str(ROOT)])
+
+    upstream_repo_dir = Path(args.upstream_repo_dir).expanduser().resolve()
+    if upstream_repo_dir.exists():
+        created = _ensure_upstream_package_markers(upstream_repo_dir)
+        if created:
+            print("[setup-colab-runtime] added upstream package markers:")
+            for item in created:
+                print(f"  - {item}")
+    else:
+        print(f"[setup-colab-runtime] upstream repo missing, skipping package marker patch: {upstream_repo_dir}")
 
     print("[setup-colab-runtime] runtime ready")
     return 0

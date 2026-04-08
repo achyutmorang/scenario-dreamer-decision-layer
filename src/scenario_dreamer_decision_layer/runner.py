@@ -206,6 +206,10 @@ def run_tier(
     env["PROJECT_ROOT"] = str(paths["upstream_dir"])
     env["SCRATCH_ROOT"] = str(paths["scratch_root"])
     env["DATASET_ROOT"] = str(paths["dataset_root"])
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{paths['upstream_dir']}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(paths["upstream_dir"])
+    )
 
     started = time.time()
     proc = subprocess.run(
