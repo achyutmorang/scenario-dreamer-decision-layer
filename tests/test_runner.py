@@ -324,7 +324,20 @@ class RunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             temp_root = Path(td)
 
-            def fake_audit(*, scenario_index, seeds, visualize, lightweight):
+            progress_events = []
+
+            def fake_audit(*, scenario_index, seeds, visualize, lightweight, progress=None):
+                if progress is not None:
+                    progress(
+                        {
+                            "event": "seed_started",
+                            "scenario_index": scenario_index,
+                            "scenario_name": f"scene_{scenario_index}.pkl",
+                            "seed": list(seeds)[0],
+                            "seed_position": 1,
+                            "seed_total": len(list(seeds)),
+                        }
+                    )
                 risk_by_seed = {
                     0: [0.20, 0.35, 0.30],
                     1: [0.40, 0.25, 0.50],
@@ -387,6 +400,7 @@ class RunnerTests(unittest.TestCase):
                     risk_key="min_ttc_proxy_s",
                     visualize=False,
                     lightweight=True,
+                    progress=progress_events.append,
                 )
 
             self.assertEqual(summary["scene_count"], 2)
@@ -395,6 +409,9 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(summary["selector_summary"]["2"]["num_improved"], 1)
             self.assertAlmostEqual(summary["selector_summary"]["3"]["mean_risk_improvement"], 0.125)
             self.assertTrue((Path(summary["run_dir"]) / "risk_variance_study_summary.json").exists())
+            self.assertTrue(any(event["event"] == "scene_started" for event in progress_events))
+            self.assertTrue(any(event["event"] == "seed_started" for event in progress_events))
+            self.assertTrue(any(event["event"] == "risk_study_completed" for event in progress_events))
 
 
 if __name__ == "__main__":

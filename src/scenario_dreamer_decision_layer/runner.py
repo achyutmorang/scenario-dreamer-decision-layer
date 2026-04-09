@@ -11,7 +11,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Tuple
 
 from .artifacts import create_run_bundle, sha256_jsonable, write_json, write_manifest, write_video_manifest
 from .config import load_config, project_root, resolve_repo_relative
@@ -37,6 +37,14 @@ RISK_SCORE_DIRECTIONS = {
     "min_ego_agent_distance_m": "max",
     "hard_brake_count": "min",
 }
+
+ProgressCallback = Callable[[Dict[str, Any]], None]
+
+
+def _emit_progress(progress: ProgressCallback | None, event: str, **payload: Any) -> None:
+    if progress is None:
+        return
+    progress({"event": event, **payload})
 
 
 def _resolve_common_paths(config: Dict[str, Any]) -> Dict[str, Path]:
@@ -502,6 +510,7 @@ def run_diversity_audit(
     seeds: Iterable[int] = (0, 1, 2, 3),
     visualize: bool = False,
     lightweight: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> Dict[str, Any]:
     config = load_config()
     paths = _resolve_common_paths(config)
@@ -522,13 +531,31 @@ def run_diversity_audit(
     requested_seeds = [int(seed) for seed in seeds]
     movie_root = bundle["movie_dir"]
     movie_root.mkdir(parents=True, exist_ok=True)
+    _emit_progress(
+        progress,
+        "diversity_audit_started",
+        scenario_index=scenario_index,
+        scenario_name=scenario_path.name,
+        seed_count=len(requested_seeds),
+        visualize=visualize,
+        lightweight=lightweight,
+    )
 
     run_payloads: List[Dict[str, Any]] = []
-    for seed in requested_seeds:
+    for seed_position, seed in enumerate(requested_seeds, start=1):
         seed_dir = bundle["run_dir"] / f"seed_{seed:03d}"
         seed_dir.mkdir(parents=True, exist_ok=True)
         movie_dir = movie_root / f"seed_{seed:03d}"
         movie_dir.mkdir(parents=True, exist_ok=True)
+        _emit_progress(
+            progress,
+            "seed_started",
+            scenario_index=scenario_index,
+            scenario_name=scenario_path.name,
+            seed=seed,
+            seed_position=seed_position,
+            seed_total=len(requested_seeds),
+        )
         cmd = _build_command(
             config,
             tier="diversity_audit",
@@ -566,6 +593,19 @@ def run_diversity_audit(
         write_json(seed_dir / "config_snapshot.json", {"seed": seed, "scenario_path": str(scenario_path), "command": cmd})
         write_json(seed_dir / "trajectory_summary.json", trace_payload["trajectory_summary"])
         run_payloads.append(seed_payload)
+        _emit_progress(
+            progress,
+            "seed_completed",
+            scenario_index=scenario_index,
+            scenario_name=scenario_path.name,
+            seed=seed,
+            seed_position=seed_position,
+            seed_total=len(requested_seeds),
+            elapsed_seconds=elapsed,
+            metrics=metrics,
+            trajectory_metrics=trace_payload["trajectory_summary"].get("trajectory_metrics", {}),
+            termination_reason=trace_payload["trajectory_summary"].get("trajectory_categories", {}).get("termination_reason"),
+        )
 
     metric_keys = sorted(config["evaluation"]["metrics"])
     metric_values: Dict[str, List[float]] = {key: [] for key in metric_keys}
@@ -626,6 +666,15 @@ def run_diversity_audit(
         "decision": decision,
     }
     write_json(bundle["run_dir"] / "diversity_audit_summary.json", summary)
+    _emit_progress(
+        progress,
+        "diversity_audit_completed",
+        scenario_index=scenario_index,
+        scenario_name=scenario_path.name,
+        decision=decision,
+        metric_level_diversity_detected=metric_level_diversity_detected,
+        trajectory_level_diversity_detected=trajectory_level_diversity_detected,
+    )
     return summary
 
 
@@ -637,6 +686,7 @@ def run_risk_variance_study(
     risk_key: str = "min_ttc_proxy_s",
     visualize: bool = False,
     lightweight: bool = True,
+    progress: ProgressCallback | None = None,
 ) -> Dict[str, Any]:
     if risk_key not in RISK_SCORE_DIRECTIONS:
         raise ValueError(f"Unsupported risk_key={risk_key!r}; expected one of {sorted(RISK_SCORE_DIRECTIONS)}")
@@ -652,18 +702,48 @@ def run_risk_variance_study(
     requested_k_values = sorted({int(value) for value in selector_k_values if int(value) > 0})
     if not requested_k_values:
         raise ValueError("Expected at least one positive selector K value.")
+    _emit_progress(
+        progress,
+        "risk_study_started",
+        scenario_indices=requested_scene_indices,
+        scene_count=len(requested_scene_indices),
+        seeds=requested_seeds,
+        seed_count=len(requested_seeds),
+        selector_k_values=requested_k_values,
+        risk_key=risk_key,
+        visualize=visualize,
+        lightweight=lightweight,
+    )
 
     tag = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     bundle = create_run_bundle(tag=tag, tier="risk_variance_study")
     scene_payloads: List[Dict[str, Any]] = []
     selector_aggregate: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
 
-    for scenario_index in requested_scene_indices:
+    for scene_position, scenario_index in enumerate(requested_scene_indices, start=1):
+        _emit_progress(
+            progress,
+            "scene_started",
+            scenario_index=scenario_index,
+            scene_position=scene_position,
+            scene_total=len(requested_scene_indices),
+            seed_count=len(requested_seeds),
+        )
+
+        def _scene_progress(payload: Dict[str, Any]) -> None:
+            merged = {
+                "scene_position": scene_position,
+                "scene_total": len(requested_scene_indices),
+                **payload,
+            }
+            _emit_progress(progress, merged.pop("event"), **merged)
+
         audit_summary = run_diversity_audit(
             scenario_index=scenario_index,
             seeds=requested_seeds,
             visualize=visualize,
             lightweight=lightweight,
+            progress=_scene_progress,
         )
         runs = list(audit_summary.get("runs", []))
         risk_values = [
@@ -677,6 +757,18 @@ def run_risk_variance_study(
             probe = _selector_pick(runs, k=k, risk_key=risk_key)
             selector_probe.append(probe)
             selector_aggregate[int(k)].append(probe)
+
+        _emit_progress(
+            progress,
+            "scene_completed",
+            scenario_index=scenario_index,
+            scene_position=scene_position,
+            scene_total=len(requested_scene_indices),
+            scenario_name=audit_summary.get("scenario_name", ""),
+            decision=audit_summary.get("decision", ""),
+            risk_variance=risk_variance,
+            selector_probe=selector_probe,
+        )
 
         scene_payloads.append(
             {
@@ -755,6 +847,15 @@ def run_risk_variance_study(
         },
     )
     write_json(bundle["run_dir"] / "risk_variance_study_summary.json", summary)
+    _emit_progress(
+        progress,
+        "risk_study_completed",
+        run_id=bundle["run_id"],
+        run_dir=str(bundle["run_dir"]),
+        scene_count=len(scene_payloads),
+        aggregate=summary["aggregate"],
+        selector_summary=selector_summary,
+    )
     return summary
 
 
