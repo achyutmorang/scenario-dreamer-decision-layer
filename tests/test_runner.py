@@ -13,7 +13,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from scenario_dreamer_decision_layer.runner import _select_pickle_files, run_diversity_audit
+from scenario_dreamer_decision_layer.runner import _select_pickle_files, run_diversity_audit, run_risk_variance_study
 
 
 class RunnerTests(unittest.TestCase):
@@ -319,6 +319,82 @@ class RunnerTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(RuntimeError, "did not produce a payload file"):
                     run_diversity_audit(scenario_index=0, seeds=[0], visualize=False, lightweight=True)
+
+    def test_run_risk_variance_study_aggregates_scene_risk_and_selector_probe(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            temp_root = Path(td)
+
+            def fake_audit(*, scenario_index, seeds, visualize, lightweight):
+                risk_by_seed = {
+                    0: [0.20, 0.35, 0.30],
+                    1: [0.40, 0.25, 0.50],
+                }[scenario_index]
+                runs = []
+                for seed, risk in zip(seeds, risk_by_seed):
+                    runs.append(
+                        {
+                            "seed": seed,
+                            "metrics": {
+                                "collision_rate": 0.0,
+                                "off_route_rate": 0.0,
+                                "completed_rate": 1.0,
+                                "progress": 100.0,
+                            },
+                            "trajectory_summary": {
+                                "trajectory_metrics": {
+                                    "min_ttc_proxy_s": risk,
+                                    "min_ego_agent_distance_m": risk + 1.0,
+                                },
+                                "trajectory_categories": {
+                                    "termination_reason": "completed",
+                                },
+                            },
+                        }
+                    )
+                return {
+                    "run_id": f"scene_{scenario_index}",
+                    "run_dir": str(temp_root / f"scene_{scenario_index}"),
+                    "scenario_name": f"scene_{scenario_index}.pkl",
+                    "metric_level_diversity_detected": False,
+                    "trajectory_level_diversity_detected": True,
+                    "decision": "trajectory_level_diversity_detected_metric_level_flat",
+                    "metric_spread": {},
+                    "trajectory_metric_spread": {
+                        "min_ttc_proxy_s": {
+                            "min": min(risk_by_seed),
+                            "max": max(risk_by_seed),
+                            "range": max(risk_by_seed) - min(risk_by_seed),
+                            "unique_values": len(set(risk_by_seed)),
+                        }
+                    },
+                    "trajectory_category_spread": {
+                        "termination_reason": {
+                            "unique_values": 1,
+                            "values": ["completed"],
+                        }
+                    },
+                    "runs": runs,
+                }
+
+            with (
+                patch.dict(os.environ, {"SCENARIO_DREAMER_RESULTS_ROOT": str(temp_root / "results" / "runs")}, clear=False),
+                patch("scenario_dreamer_decision_layer.runner.run_diversity_audit", side_effect=fake_audit),
+            ):
+                summary = run_risk_variance_study(
+                    scenario_indices=[0, 1],
+                    seeds=[0, 1, 2],
+                    selector_k_values=[1, 2, 3],
+                    risk_key="min_ttc_proxy_s",
+                    visualize=False,
+                    lightweight=True,
+                )
+
+            self.assertEqual(summary["scene_count"], 2)
+            self.assertEqual(summary["risk_key"], "min_ttc_proxy_s")
+            self.assertEqual(summary["selector_summary"]["1"]["num_improved"], 0)
+            self.assertEqual(summary["selector_summary"]["2"]["num_improved"], 1)
+            self.assertAlmostEqual(summary["selector_summary"]["3"]["mean_risk_improvement"], 0.125)
+            self.assertTrue((Path(summary["run_dir"]) / "risk_variance_study_summary.json").exists())
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import time
 from collections import defaultdict
@@ -30,6 +31,12 @@ OUTCOME_DIVERSITY_METRICS = (
     "completed_rate",
     "progress",
 )
+
+RISK_SCORE_DIRECTIONS = {
+    "min_ttc_proxy_s": "max",
+    "min_ego_agent_distance_m": "max",
+    "hard_brake_count": "min",
+}
 
 
 def _resolve_common_paths(config: Dict[str, Any]) -> Dict[str, Path]:
@@ -225,6 +232,100 @@ def _compute_categorical_spread(metric_values: Dict[str, List[str]]) -> Dict[str
             "values": unique,
         }
     return spread
+
+
+def _risk_value_from_run(run_payload: Dict[str, Any], risk_key: str) -> float | None:
+    trajectory_summary = run_payload.get("trajectory_summary", {})
+    trajectory_metrics = trajectory_summary.get("trajectory_metrics", {})
+    value = trajectory_metrics.get(risk_key)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _variance_summary(values: List[float]) -> Dict[str, float | int | None]:
+    if not values:
+        return {
+            "count": 0,
+            "mean": None,
+            "min": None,
+            "max": None,
+            "range": None,
+            "variance": None,
+            "stdev": None,
+        }
+    if len(values) == 1:
+        variance = 0.0
+        stdev = 0.0
+    else:
+        variance = statistics.pvariance(values)
+        stdev = statistics.pstdev(values)
+    return {
+        "count": len(values),
+        "mean": float(statistics.fmean(values)),
+        "min": float(min(values)),
+        "max": float(max(values)),
+        "range": float(max(values) - min(values)),
+        "variance": float(variance),
+        "stdev": float(stdev),
+    }
+
+
+def _selector_pick(
+    runs: List[Dict[str, Any]],
+    *,
+    k: int,
+    risk_key: str,
+) -> Dict[str, Any]:
+    candidates = runs[: max(1, min(k, len(runs)))]
+    direction = RISK_SCORE_DIRECTIONS[risk_key]
+
+    scored: List[Tuple[float, Dict[str, Any]]] = []
+    for item in candidates:
+        value = _risk_value_from_run(item, risk_key)
+        if value is None:
+            continue
+        scored.append((value, item))
+
+    if not scored:
+        return {
+            "k": k,
+            "selected_seed": None,
+            "selected_risk_value": None,
+            "baseline_seed": candidates[0]["seed"] if candidates else None,
+            "baseline_risk_value": None,
+            "risk_improvement": None,
+            "outcome_changed": False,
+            "selected_metrics": {},
+            "baseline_metrics": candidates[0].get("metrics", {}) if candidates else {},
+        }
+
+    baseline = candidates[0]
+    baseline_value = _risk_value_from_run(baseline, risk_key)
+    if direction == "max":
+        selected_value, selected = max(scored, key=lambda item: item[0])
+        improvement = None if baseline_value is None else float(selected_value - baseline_value)
+    else:
+        selected_value, selected = min(scored, key=lambda item: item[0])
+        improvement = None if baseline_value is None else float(baseline_value - selected_value)
+
+    baseline_metrics = baseline.get("metrics", {})
+    selected_metrics = selected.get("metrics", {})
+    outcome_changed = any(
+        baseline_metrics.get(key) != selected_metrics.get(key)
+        for key in OUTCOME_DIVERSITY_METRICS
+    )
+    return {
+        "k": int(k),
+        "selected_seed": int(selected["seed"]),
+        "selected_risk_value": float(selected_value),
+        "baseline_seed": int(baseline["seed"]),
+        "baseline_risk_value": None if baseline_value is None else float(baseline_value),
+        "risk_improvement": improvement,
+        "outcome_changed": outcome_changed,
+        "selected_metrics": selected_metrics,
+        "baseline_metrics": baseline_metrics,
+    }
 
 
 def _execute_trajectory_audit(
@@ -525,6 +626,135 @@ def run_diversity_audit(
         "decision": decision,
     }
     write_json(bundle["run_dir"] / "diversity_audit_summary.json", summary)
+    return summary
+
+
+def run_risk_variance_study(
+    *,
+    scenario_indices: Iterable[int],
+    seeds: Iterable[int] = tuple(range(10)),
+    selector_k_values: Iterable[int] = (1, 2, 5, 10),
+    risk_key: str = "min_ttc_proxy_s",
+    visualize: bool = False,
+    lightweight: bool = True,
+) -> Dict[str, Any]:
+    if risk_key not in RISK_SCORE_DIRECTIONS:
+        raise ValueError(f"Unsupported risk_key={risk_key!r}; expected one of {sorted(RISK_SCORE_DIRECTIONS)}")
+
+    requested_scene_indices = [int(index) for index in scenario_indices]
+    if not requested_scene_indices:
+        raise ValueError("Expected at least one scenario index.")
+
+    requested_seeds = [int(seed) for seed in seeds]
+    if not requested_seeds:
+        raise ValueError("Expected at least one seed.")
+
+    requested_k_values = sorted({int(value) for value in selector_k_values if int(value) > 0})
+    if not requested_k_values:
+        raise ValueError("Expected at least one positive selector K value.")
+
+    tag = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    bundle = create_run_bundle(tag=tag, tier="risk_variance_study")
+    scene_payloads: List[Dict[str, Any]] = []
+    selector_aggregate: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+
+    for scenario_index in requested_scene_indices:
+        audit_summary = run_diversity_audit(
+            scenario_index=scenario_index,
+            seeds=requested_seeds,
+            visualize=visualize,
+            lightweight=lightweight,
+        )
+        runs = list(audit_summary.get("runs", []))
+        risk_values = [
+            value
+            for value in (_risk_value_from_run(run_payload, risk_key) for run_payload in runs)
+            if value is not None
+        ]
+        risk_variance = _variance_summary(risk_values)
+        selector_probe = []
+        for k in requested_k_values:
+            probe = _selector_pick(runs, k=k, risk_key=risk_key)
+            selector_probe.append(probe)
+            selector_aggregate[int(k)].append(probe)
+
+        scene_payloads.append(
+            {
+                "scenario_index": int(scenario_index),
+                "scenario_name": audit_summary.get("scenario_name", ""),
+                "audit_run_id": audit_summary.get("run_id", ""),
+                "audit_run_dir": audit_summary.get("run_dir", ""),
+                "metric_level_diversity_detected": bool(audit_summary.get("metric_level_diversity_detected", False)),
+                "trajectory_level_diversity_detected": bool(audit_summary.get("trajectory_level_diversity_detected", False)),
+                "decision": audit_summary.get("decision", ""),
+                "risk_key": risk_key,
+                "risk_variance": risk_variance,
+                "metric_spread": audit_summary.get("metric_spread", {}),
+                "trajectory_metric_spread": audit_summary.get("trajectory_metric_spread", {}),
+                "trajectory_category_spread": audit_summary.get("trajectory_category_spread", {}),
+                "selector_probe": selector_probe,
+                "runs": runs,
+            }
+        )
+
+    selector_summary = {}
+    for k, probes in selector_aggregate.items():
+        improvements = [float(item["risk_improvement"]) for item in probes if item.get("risk_improvement") is not None]
+        selector_summary[str(k)] = {
+            "num_scenes": len(probes),
+            "num_improved": sum(1 for item in probes if (item.get("risk_improvement") or 0.0) > 0),
+            "num_outcome_changed": sum(1 for item in probes if item.get("outcome_changed")),
+            "mean_risk_improvement": float(statistics.fmean(improvements)) if improvements else None,
+            "max_risk_improvement": float(max(improvements)) if improvements else None,
+            "min_risk_improvement": float(min(improvements)) if improvements else None,
+        }
+
+    aggregate_risk_ranges = [
+        float(scene["risk_variance"]["range"])
+        for scene in scene_payloads
+        if scene["risk_variance"]["range"] is not None
+    ]
+    summary = {
+        "run_id": bundle["run_id"],
+        "run_dir": str(bundle["run_dir"]),
+        "scenario_indices": requested_scene_indices,
+        "seeds": requested_seeds,
+        "selector_k_values": requested_k_values,
+        "risk_key": risk_key,
+        "risk_direction": RISK_SCORE_DIRECTIONS[risk_key],
+        "visualize": visualize,
+        "lightweight": lightweight,
+        "scene_count": len(scene_payloads),
+        "scene_payloads": scene_payloads,
+        "aggregate": {
+            "risk_range_mean": float(statistics.fmean(aggregate_risk_ranges)) if aggregate_risk_ranges else None,
+            "risk_range_max": float(max(aggregate_risk_ranges)) if aggregate_risk_ranges else None,
+            "num_metric_level_diverse_scenes": sum(
+                1 for scene in scene_payloads if scene["metric_level_diversity_detected"]
+            ),
+            "num_trajectory_level_diverse_scenes": sum(
+                1 for scene in scene_payloads if scene["trajectory_level_diversity_detected"]
+            ),
+        },
+        "selector_summary": selector_summary,
+        "study_type": "offline_risk_variance_and_selector_upper_bound",
+        "study_note": (
+            "Selector probe is an offline upper bound over sampled futures, not an online control policy. "
+            "It tests whether sampling exposes safer realized futures under the same fixed baseline stack."
+        ),
+    }
+    write_json(
+        bundle["config_snapshot"],
+        {
+            "scenario_indices": requested_scene_indices,
+            "seeds": requested_seeds,
+            "selector_k_values": requested_k_values,
+            "risk_key": risk_key,
+            "visualize": visualize,
+            "lightweight": lightweight,
+        },
+    )
+    write_json(bundle["run_dir"] / "risk_variance_study_summary.json", summary)
     return summary
 
 

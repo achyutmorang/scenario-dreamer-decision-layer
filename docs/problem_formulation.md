@@ -348,13 +348,18 @@ Before any selector is implemented, the evaluation plan is:
    - choose one fixed scenario index
    - rerun the same stock baseline under multiple seeds
    - estimate whether the frozen stack exhibits non-trivial outcome spread for identical high-level conditions
-3. **Dev-tier baseline**
+3. **Risk-variance study**
+   - sweep a fixed small scene set across repeated seeds
+   - quantify variance in trajectory-level risk proxies such as minimum TTC and minimum ego-agent distance
+   - measure an offline selector upper bound by choosing the safest sampled future among the first $K$ rollouts
+   - use this to test whether sampling can improve safety margins before attempting full online replanning
+4. **Dev-tier baseline**
    - evaluate the stock baseline on the fixed dev subset
    - lock the baseline metrics and runtime envelope that future selectors must beat
-4. **Selector comparisons**
+5. **Selector comparisons**
    - only after diversity is empirically justified
    - compare single-rollout, mean, worst-case, and CVaR-based decision rules under equal future budget and equal candidate budget
-5. **Report-tier run**
+6. **Report-tier run**
    - only after the selector is stable on dev
 
 This sequence matters because a distribution-aware selector is only scientifically justified if the frozen substrate actually branches in a measurable way.

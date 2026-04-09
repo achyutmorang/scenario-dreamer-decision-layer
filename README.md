@@ -47,9 +47,10 @@ For example, if the experiment is an interaction-breakdown study or a decision-l
 - [`scripts/run_dev_eval.py`](./scripts/run_dev_eval.py): fixed small subset development run
 - [`scripts/run_report_eval.py`](./scripts/run_report_eval.py): full report-tier run
 - [`scripts/run_diversity_audit.py`](./scripts/run_diversity_audit.py): Experiment 0 seed-sweep audit on one fixed scenario
+- [`scripts/run_risk_variance_study.py`](./scripts/run_risk_variance_study.py): multi-scene risk-variance study plus offline selector upper bound
 - [`scripts/render_demo.py`](./scripts/render_demo.py): single-environment MP4 demo run
 - [`scripts/setup_colab_runtime.py`](./scripts/setup_colab_runtime.py): lean Colab runtime bootstrap for baseline simulation
-- [`notebooks/`](./notebooks): Colab notebooks for Drive-backed asset prep, smoke baseline, diversity audit, and dev/report evaluation
+- [`notebooks/`](./notebooks): Colab notebooks for Drive-backed asset prep, smoke baseline, diversity audit, risk study, and dev/report evaluation
 
 ## Quickstart
 ### 1. Download papers
@@ -98,11 +99,17 @@ python3 scripts/run_diversity_audit.py --scenario-index 0 --seeds 0,1,2,3
 python3 scripts/run_dev_eval.py
 ```
 
+### 9. Run the multi-scene risk study
+```bash
+python3 scripts/run_risk_variance_study.py --scenario-indices 0,1,2,3,4 --seeds 0,1,2,3,4,5,6,7,8,9 --selector-k-values 1,2,5,10
+```
+
 ## Colab Path
 If you want a persistent Colab workflow with Google Drive-backed assets and run artifacts:
 - use [`notebooks/scenario_dreamer_assets_colab.ipynb`](./notebooks/scenario_dreamer_assets_colab.ipynb) to bind the canonical repo asset layout to Drive and optionally fetch the CtRL-Sim checkpoint,
 - then use [`notebooks/scenario_dreamer_baseline_colab.ipynb`](./notebooks/scenario_dreamer_baseline_colab.ipynb) to install a lean simulation runtime, run the smoke baseline, and render a demo MP4 directly into Drive-backed results storage,
 - then use [`notebooks/scenario_dreamer_diversity_audit_colab.ipynb`](./notebooks/scenario_dreamer_diversity_audit_colab.ipynb) for Experiment 0,
+- then use [`notebooks/scenario_dreamer_risk_study_colab.ipynb`](./notebooks/scenario_dreamer_risk_study_colab.ipynb) to quantify per-scene risk variance and measure the offline selector upper bound,
 - and use [`notebooks/scenario_dreamer_dev_eval_colab.ipynb`](./notebooks/scenario_dreamer_dev_eval_colab.ipynb) to run the fixed dev subset and, later, the report tier.
 
 ## Normalized Output Contract

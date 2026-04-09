@@ -92,23 +92,29 @@ The immediate execution ladder is:
    - rerun the same stock ego policy under multiple seeds
    - measure whether closed-loop outcome metrics vary across seeds
    - if no metric-level variation appears, do not rush into a distributional selector; first add trajectory-level audit instrumentation
-3. **Dev-tier baseline lock**
+3. **Risk-variance study**
+   - expand from one scenario to a fixed small scene set
+   - quantify per-scene variance in short-horizon risk proxies such as minimum TTC and minimum ego-agent distance
+   - measure an offline selector upper bound by choosing the safest sampled future among the first $K$ rollouts
+   - use this to decide whether multi-sample selection has enough signal to justify a stronger online selector
+4. **Dev-tier baseline lock**
    - run the fixed 12-scenario dev subset
    - record the stock baseline metrics and runtime envelope
    - use this as the default comparator for early selector work
-4. **Selector baseline ladder**
+5. **Selector baseline ladder**
    - once candidate generation exists, compare:
      - stock IDM ego
      - single-rollout selection
      - mean-based selection
      - worst-case selection
      - CVaR-constrained selection
-5. **Report-tier evaluation**
+6. **Report-tier evaluation**
    - only after the selector is stable on the dev subset
    - preserve seeds, scenario pack, and metric schema
 
 Decision gate:
 - if Experiment 0 shows no meaningful future diversity, the project should shift toward deterministic or robust replanning rather than tail-risk statistics.
+- if the risk-variance study shows no consistent improvement even for the offline selector upper bound, do not invest in a more expensive online selector yet.
 
 ## Phased Milestones
 1. **Baseline bootstrap**
