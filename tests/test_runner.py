@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -89,35 +90,40 @@ class RunnerTests(unittest.TestCase):
             def fake_run(cmd, cwd, env, text, capture_output, check):
                 seed_token = next(part for part in cmd if part.startswith("sim.seed="))
                 seed = int(seed_token.split("=", 1)[1])
-                stdout = json.dumps(
-                    {
-                        "metrics": {
-                            "collision_rate": 0.0,
-                            "off_route_rate": 0.0,
-                            "completed_rate": 1.0,
-                            "progress": seed_to_progress[seed],
-                        },
-                        "trajectory_summary": {
-                            "trajectory_metrics": {
-                                "terminal_y_m": seed_to_terminal_y[seed],
-                                "min_ego_agent_distance_m": 4.0,
-                                "hard_brake_count": float(seed),
+                output_path = Path(cmd[cmd.index("--output-json") + 1])
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(
+                    json.dumps(
+                        {
+                            "metrics": {
+                                "collision_rate": 0.0,
+                                "off_route_rate": 0.0,
+                                "completed_rate": 1.0,
+                                "progress": seed_to_progress[seed],
                             },
-                            "trajectory_categories": {
-                                "termination_reason": "completed",
+                            "trajectory_summary": {
+                                "trajectory_metrics": {
+                                    "terminal_y_m": seed_to_terminal_y[seed],
+                                    "min_ego_agent_distance_m": 4.0,
+                                    "hard_brake_count": float(seed),
+                                },
+                                "trajectory_categories": {
+                                    "termination_reason": "completed",
+                                },
                             },
-                        },
-                    }
+                        }
+                    ),
+                    encoding="utf-8",
                 )
 
                 class Result:
                     returncode = 0
                     stderr = ""
 
-                    def __init__(self, out: str):
-                        self.stdout = out
+                    def __init__(self):
+                        self.stdout = ""
 
-                return Result(stdout)
+                return Result()
 
             with (
                 patch("scenario_dreamer_decision_layer.runner.load_config", return_value=config),
@@ -196,34 +202,39 @@ class RunnerTests(unittest.TestCase):
             def fake_run(cmd, cwd, env, text, capture_output, check):
                 seed_token = next(part for part in cmd if part.startswith("sim.seed="))
                 seed = int(seed_token.split("=", 1)[1])
-                stdout = json.dumps(
-                    {
-                        "metrics": {
-                            "collision_rate": 0.0,
-                            "off_route_rate": 0.0,
-                            "completed_rate": 1.0,
-                            "progress": 10.0,
-                        },
-                        "trajectory_summary": {
-                            "trajectory_metrics": {
-                                "terminal_y_m": float(seed),
-                                "min_ego_agent_distance_m": 5.0,
+                output_path = Path(cmd[cmd.index("--output-json") + 1])
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(
+                    json.dumps(
+                        {
+                            "metrics": {
+                                "collision_rate": 0.0,
+                                "off_route_rate": 0.0,
+                                "completed_rate": 1.0,
+                                "progress": 10.0,
                             },
-                            "trajectory_categories": {
-                                "termination_reason": seed_to_terminal_reason[seed],
+                            "trajectory_summary": {
+                                "trajectory_metrics": {
+                                    "terminal_y_m": float(seed),
+                                    "min_ego_agent_distance_m": 5.0,
+                                },
+                                "trajectory_categories": {
+                                    "termination_reason": seed_to_terminal_reason[seed],
+                                },
                             },
-                        },
-                    }
+                        }
+                    ),
+                    encoding="utf-8",
                 )
 
                 class Result:
                     returncode = 0
                     stderr = ""
 
-                    def __init__(self, out: str):
-                        self.stdout = out
+                    def __init__(self):
+                        self.stdout = ""
 
-                return Result(stdout)
+                return Result()
 
             with (
                 patch("scenario_dreamer_decision_layer.runner.load_config", return_value=config),
@@ -237,6 +248,77 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(summary["diversity_detected"])
             self.assertEqual(summary["decision"], "trajectory_level_diversity_detected_metric_level_flat")
             self.assertEqual(summary["trajectory_category_spread"]["termination_reason"]["unique_values"], 2)
+
+    def test_run_diversity_audit_fails_if_worker_exits_without_payload_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            temp_root = Path(td)
+            env_pickles = temp_root / "pickles"
+            env_pickles.mkdir(parents=True, exist_ok=True)
+            (env_pickles / "scene_0.pkl").write_text("pickle-bytes", encoding="utf-8")
+
+            config = {
+                "baseline_name": "scenario_dreamer_ctrlsim",
+                "upstream": {
+                    "repo_url": "https://example.com/upstream.git",
+                    "repo_commit": "deadbeef",
+                    "repo_dir": str(temp_root / "upstream"),
+                },
+                "assets": {
+                    "checkpoint": {"relative_ckpt_path": str(temp_root / "ckpt" / "last.ckpt")},
+                    "simulation_envs": {
+                        "pickles_dir": str(env_pickles),
+                        "jsons_dir": str(temp_root / "jsons"),
+                    },
+                    "scratch_root": str(temp_root / "scratch"),
+                    "movies_dir": str(temp_root / "movies"),
+                    "dataset_root": str(temp_root / "datasets"),
+                },
+                "baseline": {
+                    "sim_mode": "scenario_dreamer",
+                    "policy": "idm",
+                    "behaviour_model_run_name": "ctrl_sim_waymo_1M_steps",
+                    "simulate_vehicles_only": True,
+                    "verbose": True,
+                    "steps": 400,
+                    "dt": 0.1,
+                    "agent_scale": 1.0,
+                    "tilt": 10,
+                    "action_temperature": 1.0,
+                    "use_rtg": True,
+                    "predict_rtgs": True,
+                    "compute_behaviour_metrics": False,
+                },
+                "evaluation": {
+                    "metrics": [
+                        "collision_rate",
+                        "off_route_rate",
+                        "completed_rate",
+                        "progress",
+                        "runtime_throughput_scenarios_per_sec",
+                        "num_scenarios",
+                        "elapsed_seconds",
+                    ]
+                },
+            }
+            upstream_dir = Path(config["upstream"]["repo_dir"])
+            upstream_dir.mkdir(parents=True, exist_ok=True)
+            ckpt_path = Path(config["assets"]["checkpoint"]["relative_ckpt_path"])
+            ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+            ckpt_path.write_text("checkpoint", encoding="utf-8")
+
+            class Result:
+                returncode = 0
+                stderr = ""
+                stdout = ""
+
+            with (
+                patch.dict(os.environ, {"SCENARIO_DREAMER_RESULTS_ROOT": str(temp_root / "results" / "runs")}, clear=False),
+                patch("scenario_dreamer_decision_layer.runner.load_config", return_value=config),
+                patch("scenario_dreamer_decision_layer.runner.project_root", return_value=temp_root),
+                patch("scenario_dreamer_decision_layer.runner.subprocess.run", return_value=Result()),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "did not produce a payload file"):
+                    run_diversity_audit(scenario_index=0, seeds=[0], visualize=False, lightweight=True)
 
 
 if __name__ == "__main__":

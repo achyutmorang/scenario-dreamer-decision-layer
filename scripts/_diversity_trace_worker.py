@@ -19,6 +19,7 @@ def _parse_args() -> argparse.Namespace:
         description="Run one fixed-scenario diversity trace and emit metric and trajectory summaries as JSON."
     )
     parser.add_argument("--config-dir", required=True)
+    parser.add_argument("--output-json", required=True)
     parser.add_argument("overrides", nargs=argparse.REMAINDER)
     return parser.parse_args()
 
@@ -154,6 +155,8 @@ def _trace_summary(trace: List[Dict[str, Any]], dt: float, info: Dict[str, Any],
 def main() -> int:
     args = _parse_args()
     cfg = _compose_cfg(args.config_dir, args.overrides)
+    output_path = Path(args.output_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     import torch
     from policies.idm_policy import IDMPolicy
@@ -227,8 +230,8 @@ def main() -> int:
         "metrics": metrics,
         "trajectory_summary": _trace_summary(trace, float(cfg.sim.dt), info, final_step),
     }
-    json.dump(payload, sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps({"status": "ok", "output_json": str(output_path)}, sort_keys=True))
     return 0
 
 

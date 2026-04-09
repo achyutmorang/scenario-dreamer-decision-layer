@@ -235,11 +235,14 @@ def _execute_trajectory_audit(
     stderr_path: Path,
 ) -> Dict[str, Any]:
     worker_script = project_root() / "scripts" / "_diversity_trace_worker.py"
+    payload_path = stdout_path.with_name("trajectory_payload.json")
     worker_cmd = [
         "python",
         str(worker_script),
         "--config-dir",
         str(paths["upstream_dir"] / "cfgs"),
+        "--output-json",
+        str(payload_path),
         *cmd[2:],
     ]
     proc = subprocess.run(
@@ -254,7 +257,18 @@ def _execute_trajectory_audit(
     stderr_path.write_text(proc.stderr, encoding="utf-8")
     if proc.returncode != 0:
         raise RuntimeError(f"Trajectory audit failed with code {proc.returncode}. See {stderr_path}")
-    return json.loads(proc.stdout)
+    if not payload_path.exists():
+        raise RuntimeError(
+            "Trajectory audit worker exited successfully but did not produce a payload file. "
+            f"See {stdout_path} and {stderr_path}"
+        )
+    try:
+        return json.loads(payload_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "Trajectory audit worker produced an invalid payload file. "
+            f"See {payload_path}, {stdout_path}, and {stderr_path}"
+        ) from exc
 
 
 def run_tier(
