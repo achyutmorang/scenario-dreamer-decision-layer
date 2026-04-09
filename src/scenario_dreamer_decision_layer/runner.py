@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import time
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
@@ -22,6 +23,13 @@ METRIC_PATTERNS = {
     "completed_rate": re.compile(r"completed rate:\s*([0-9.]+)"),
     "progress": re.compile(r"progress:\s*([0-9.]+)"),
 }
+
+OUTCOME_DIVERSITY_METRICS = (
+    "collision_rate",
+    "off_route_rate",
+    "completed_rate",
+    "progress",
+)
 
 
 def _resolve_common_paths(config: Dict[str, Any]) -> Dict[str, Path]:
@@ -192,6 +200,63 @@ def _execute_simulation(
     return metrics, elapsed
 
 
+def _compute_numeric_spread(metric_values: Dict[str, List[float]]) -> Dict[str, Dict[str, float | int]]:
+    spread: Dict[str, Dict[str, float | int]] = {}
+    for key, values in metric_values.items():
+        if not values:
+            continue
+        spread[key] = {
+            "min": min(values),
+            "max": max(values),
+            "range": max(values) - min(values),
+            "unique_values": len({round(v, 10) for v in values}),
+        }
+    return spread
+
+
+def _compute_categorical_spread(metric_values: Dict[str, List[str]]) -> Dict[str, Dict[str, Any]]:
+    spread: Dict[str, Dict[str, Any]] = {}
+    for key, values in metric_values.items():
+        if not values:
+            continue
+        unique = sorted({str(value) for value in values})
+        spread[key] = {
+            "unique_values": len(unique),
+            "values": unique,
+        }
+    return spread
+
+
+def _execute_trajectory_audit(
+    *,
+    paths: Dict[str, Path],
+    cmd: List[str],
+    stdout_path: Path,
+    stderr_path: Path,
+) -> Dict[str, Any]:
+    worker_script = project_root() / "scripts" / "_diversity_trace_worker.py"
+    worker_cmd = [
+        "python",
+        str(worker_script),
+        "--config-dir",
+        str(paths["upstream_dir"] / "cfgs"),
+        *cmd[2:],
+    ]
+    proc = subprocess.run(
+        worker_cmd,
+        cwd=project_root(),
+        env=_simulation_env(paths),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    stdout_path.write_text(proc.stdout, encoding="utf-8")
+    stderr_path.write_text(proc.stderr, encoding="utf-8")
+    if proc.returncode != 0:
+        raise RuntimeError(f"Trajectory audit failed with code {proc.returncode}. See {stderr_path}")
+    return json.loads(proc.stdout)
+
+
 def run_tier(
     tier: str,
     dry_run: bool = False,
@@ -358,13 +423,20 @@ def run_diversity_audit(
             lightweight=lightweight,
             seed=seed,
         )
-        metrics, elapsed = _execute_simulation(
+        started = time.time()
+        trace_payload = _execute_trajectory_audit(
             paths=paths,
             cmd=cmd,
-            scenario_count=scenario_count,
             stdout_path=seed_dir / "stdout.log",
             stderr_path=seed_dir / "stderr.log",
         )
+        elapsed = time.time() - started
+        metrics = {
+            **trace_payload["metrics"],
+            "runtime_throughput_scenarios_per_sec": (scenario_count / elapsed) if elapsed > 0 else 0.0,
+            "num_scenarios": scenario_count,
+            "elapsed_seconds": elapsed,
+        }
         seed_payload = {
             "seed": seed,
             "command": cmd,
@@ -373,9 +445,11 @@ def run_diversity_audit(
             "stdout_log": str(seed_dir / "stdout.log"),
             "stderr_log": str(seed_dir / "stderr.log"),
             "movie_dir": str(movie_dir),
+            "trajectory_summary": trace_payload["trajectory_summary"],
         }
         write_json(seed_dir / "metrics.json", metrics)
         write_json(seed_dir / "config_snapshot.json", {"seed": seed, "scenario_path": str(scenario_path), "command": cmd})
+        write_json(seed_dir / "trajectory_summary.json", trace_payload["trajectory_summary"])
         run_payloads.append(seed_payload)
 
     metric_keys = sorted(config["evaluation"]["metrics"])
@@ -386,17 +460,37 @@ def run_diversity_audit(
             if value is not None:
                 metric_values[key].append(float(value))
 
-    spread = {
-        key: {
-            "min": min(values),
-            "max": max(values),
-            "range": max(values) - min(values),
-            "unique_values": len({round(v, 10) for v in values}),
-        }
-        for key, values in metric_values.items()
-        if values
-    }
-    diversity_detected = any(item["range"] > 0 for item in spread.values())
+    spread = _compute_numeric_spread(metric_values)
+    metric_level_diversity_detected = any(
+        spread.get(metric_name, {}).get("range", 0.0) > 0 for metric_name in OUTCOME_DIVERSITY_METRICS
+    )
+
+    trajectory_metric_values: Dict[str, List[float]] = defaultdict(list)
+    trajectory_category_values: Dict[str, List[str]] = defaultdict(list)
+    for payload in run_payloads:
+        trajectory_summary = payload.get("trajectory_summary", {})
+        for key, value in trajectory_summary.get("trajectory_metrics", {}).items():
+            if value is not None:
+                trajectory_metric_values[key].append(float(value))
+        for key, value in trajectory_summary.get("trajectory_categories", {}).items():
+            if value is not None:
+                trajectory_category_values[key].append(str(value))
+
+    trajectory_metric_spread = _compute_numeric_spread(dict(trajectory_metric_values))
+    trajectory_category_spread = _compute_categorical_spread(dict(trajectory_category_values))
+    trajectory_level_diversity_detected = (
+        any(item["range"] > 0 for item in trajectory_metric_spread.values())
+        or any(item["unique_values"] > 1 for item in trajectory_category_spread.values())
+    )
+    diversity_detected = metric_level_diversity_detected or trajectory_level_diversity_detected
+
+    if metric_level_diversity_detected:
+        decision = "distributional_method_justified_at_metric_level"
+    elif trajectory_level_diversity_detected:
+        decision = "trajectory_level_diversity_detected_metric_level_flat"
+    else:
+        decision = "metric_level_diversity_not_detected; trajectory_level_diversity_not_detected"
+
     summary = {
         "run_id": bundle["run_id"],
         "run_dir": str(bundle["run_dir"]),
@@ -409,12 +503,12 @@ def run_diversity_audit(
         "lightweight": lightweight,
         "runs": run_payloads,
         "metric_spread": spread,
+        "trajectory_metric_spread": trajectory_metric_spread,
+        "trajectory_category_spread": trajectory_category_spread,
+        "metric_level_diversity_detected": metric_level_diversity_detected,
+        "trajectory_level_diversity_detected": trajectory_level_diversity_detected,
         "diversity_detected": diversity_detected,
-        "decision": (
-            "distributional_method_justified_at_metric_level"
-            if diversity_detected
-            else "metric_level_diversity_not_detected; add trajectory-level audit before committing to distributional selector"
-        ),
+        "decision": decision,
     }
     write_json(bundle["run_dir"] / "diversity_audit_summary.json", summary)
     return summary
